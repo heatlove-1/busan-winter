@@ -6,4 +6,3 @@ data/*.json
 !data/.gitkeep
 data/raw_*.html
 site/
-*.zip

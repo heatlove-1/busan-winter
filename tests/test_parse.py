@@ -80,5 +80,20 @@ class Tot(unittest.TestCase):
         self.assertEqual((len(rows), rows[0]["종목"]), (1, "빙상쇼트트랙"))
         self.assertEqual(tally_summary(rows), {"gold": 1, "silver": 2, "bronze": 2, "total": 5})
 
+DETAIL = """<h4>컬링</h4><table><thead><tr><th>종별</th><th>세부종목</th><th>메달</th><th>선수명</th><th>소속</th><th>학년</th><th>기록</th><th>신기록</th><th>일자</th></tr></thead><tbody>
+<tr><td>일반부</td><td>믹스더블</td><td>은</td><td>갑</td><td>부산시체육회</td><td></td><td></td><td></td><td>2026/02/27</td></tr></tbody></table>
+<h4>크로스컨트리</h4><table><thead><tr><th>종별</th><th>세부종목</th><th>메달</th><th>선수명</th><th>소속</th><th>학년</th><th>기록</th><th>신기록</th><th>일자</th></tr></thead><tbody>
+<tr><td rowspan="2">남자15세이하부</td><td rowspan="2">20KM계주</td><td>금</td><td>김성찬</td><td>신도중학교</td><td>2</td><td>1:01:43.3</td><td></td><td>2026/02/27</td></tr>
+<tr><td>금</td><td>서승민</td><td>부산스키협회(중)</td><td>1</td><td>1:01:43.3</td><td></td><td>2026/02/27</td></tr></tbody></table>"""
+
+class D(unittest.TestCase):
+    def test_all_sport_tables(self):   # 종목별 표를 하나도 빠뜨리지 않아야 함
+        from collector.parse import parse_medal_detail
+        rows = parse_medal_detail(DETAIL)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([r["종목"] for r in rows], ["컬링", "크로스컨트리", "크로스컨트리"])
+        self.assertEqual(rows[2]["종별"], "남자15세이하부")        # 병합 셀 채움
+        self.assertEqual(summarize(rows)["total"], 2)             # 계주 2명 = 메달 1개 + 컬링 1개
+
 if __name__ == "__main__":
     unittest.main()

@@ -69,6 +69,19 @@ def parse_tables(html: str, required: set) -> list[dict]:
     return out
 
 
+SPORTS = {"루지", "바이애슬론", "봅슬레이스켈레톤", "빙상쇼트트랙", "빙상스피드", "빙상피겨",
+          "산악", "스노보드", "스키알파인", "아이스하키", "컬링", "크로스컨트리"}
+
+
+def parse_medal_detail(html: str) -> list[dict]:
+    """메달 명세: 종목마다 표가 따로 있으므로 '메달','선수명' 헤더가 있는 표를 모두 읽는다.
+    표 앞 제목에 종목명이 들어 있으면 '종목'으로, 아니면 빈 값으로 둔다."""
+    rows = parse_tables(html, {"메달", "선수명"})
+    for r in rows:
+        r["종목"] = next((sp for sp in SPORTS if sp in r["종목"]), "")
+    return rows
+
+
 def parse_schedule(html: str) -> list[dict]:
     return parse_tables(html, {"일시", "경기장"})
 

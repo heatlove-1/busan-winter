@@ -6,12 +6,12 @@ from pathlib import Path
 import requests
 
 from collector.dates import iter_dates
-from collector.parse import keep_rows, parse_medal_total, parse_rows, parse_schedule, summarize, tally_summary
+from collector.parse import keep_rows, parse_medal_detail, parse_medal_total, parse_rows, parse_schedule, summarize, tally_summary
 
 ROOT = Path(__file__).resolve().parent.parent
 CFG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 KST = timezone(timedelta(hours=9))
-PARSERS = {"medal": parse_rows, "schedule_t": parse_schedule, "schedule_r": parse_schedule,
+PARSERS = {"medal": parse_medal_detail, "schedule_t": parse_schedule, "schedule_r": parse_schedule,
            "medal_total": parse_medal_total}
 IGNORE_FOR_ID = {"schedule_t": {"상태"}, "schedule_r": {"상태"},
                  "medal_total": {"금", "은", "동", "합계"}}      # 상태가 바뀌면 '변경' 이벤트
