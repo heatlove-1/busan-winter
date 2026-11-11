@@ -61,8 +61,17 @@ th{color:var(--sub);font-weight:600}tr:last-child td{border-bottom:0}
   <section id="view"></section>
 </main>
 <script>
-const ADULT = ["일반부"];  // 종별에 이 글자가 있으면 '일반부', 아니면 '학생'(초·중·고·대학부). 대학부를 일반으로 볼 경우 "대학부" 추가
-const grpOf = r => ADULT.some(a => (r["종별"] || "").includes(a)) ? "일반부" : "학생";
+// 종별 → 구분. 학생 = 초등(12세이하부)·중등(15세이하부)·고등(18세이하부). 대학부·일반부는 학생이 아님
+const levelOf = r => {
+  const c = r["종별"] || "";
+  if(c.includes("일반부")) return "일반부";
+  if(c.includes("대학")) return "대학부";
+  if(/초등|12세/.test(c)) return "초등";
+  if(/중등|중학|15세/.test(c)) return "중등";
+  if(/고등|고교|18세/.test(c)) return "고등";
+  return "기타";
+};
+const grpOf = r => { const l = levelOf(r); return ["초등","중등","고등"].includes(l) ? "학생" : l; };
 function countMedals(rows){   // (종목·종별·세부종목·메달) 조합 1개 = 메달 1개 (계주·단체전은 선수 여러 명이어도 1개)
   const n = {"금":0, "은":0, "동":0}, seen = new Set();
   for(const r of rows){
@@ -73,7 +82,7 @@ function countMedals(rows){   // (종목·종별·세부종목·메달) 조합 1
   return {gold:n["금"], silver:n["은"], bronze:n["동"], total:n["금"]+n["은"]+n["동"]};
 }
 // ---end pure---
-const TITLE = {schedule:"경기 일정", medal:"메달 명세"};
+const TITLE = {schedule:"경기 일정", medal:"메달 현황"};
 const DATA = location.pathname.includes("/web/") ? "../data/" : "data/";
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -85,7 +94,7 @@ const show = r => ({"시간": (r["일시"]||"").slice(11), "종목": r["종목"]
 const cnt = rs => { const c = countMedals(rs); return {"금":c.gold, "은":c.silver, "동":c.bronze, "합계":c.total}; };
 
 let cur = "schedule", day = "전체", data = {};
-const F = {schedule:{grp:"전체",cls:"",sub:"",q:""}, medal:{grp:"전체",cls:"",sub:"",q:""}};
+const F = {schedule:{grp:"전체",cls:"",sub:"",q:""}, medal:{grp:"학생",cls:"",sub:"",q:""}};
 const allRows = () => data[cur]?.rows ?? [];
 
 async function getJson(f){
@@ -118,6 +127,7 @@ function filterBar(){
   if(f.cls && !clsList.includes(f.cls)) f.cls = "";
   const subList = [...new Set(g.filter(r => !f.cls || r["종별"]===f.cls).map(r => r["세부종목"]).filter(Boolean))].sort();
   if(f.sub && !subList.includes(f.sub)) f.sub = "";
+  const grps = ["전체","학생","대학부","일반부"]; if(all.some(r => grpOf(r)==="기타")) grps.push("기타");
   const opt = (list, v, label) => `<option value="">${label}</option>` + list.map(x => `<option${x===v?" selected":""}>${esc(x)}</option>`).join("");
   let dayChips = "";
   if(cur==="schedule"){
@@ -126,7 +136,7 @@ function filterBar(){
     dayChips = `<div class="chips">${["전체", ...days].map(x => `<button class="chip" aria-pressed="${x===day}" data-day="${x}">${x==="전체" ? "전체 날짜" : x.slice(5)+" ("+wd(x)+")"}</button>`).join("")}</div>`;
   }
   return `<div class="filters noprint">
-    <div class="chips">${["전체","학생","일반부"].map(x => `<button class="chip" aria-pressed="${x===f.grp}" data-grp="${x}">${x}</button>`).join("")}</div>
+    <div class="chips">${grps.map(x => `<button class="chip" aria-pressed="${x===f.grp}" data-grp="${x}">${x}</button>`).join("")}</div>
     <select id="f-cls" aria-label="종별">${opt(clsList, f.cls, "종별 전체")}</select>
     <select id="f-sub" aria-label="세부종목">${opt(subList, f.sub, "세부종목 전체")}</select>
     <input id="f-q" type="search" placeholder="선수·소속·종목 검색" value="${esc(f.q)}"></div>${dayChips ? `<div class="filters noprint">${dayChips}</div>` : ""}`;
@@ -144,27 +154,41 @@ function render(){
   $("f-q").oninput = e => { F[cur].q = e.target.value; renderRes(); };
   renderRes();
 }
+function byAthlete(rows){
+  const m = new Map();
+  for(const r of rows){
+    if(!["금","은","동"].includes(r["메달"])) continue;
+    const k = [r["선수명"], r["소속"]].join("|");
+    const a = m.get(k) ?? {"선수명":r["선수명"], "소속":r["소속"], "학년":r["학년"], "종별":new Set(), "금":0, "은":0, "동":0};
+    a["종별"].add(r["종별"]); a[r["메달"]]++; m.set(k, a);
+  }
+  return [...m.values()].map(a => ({...a, "종별":[...a["종별"]].join(", "), "합계":a["금"]+a["은"]+a["동"]}))
+    .sort((x, y) => y["금"]-x["금"] || y["은"]-x["은"] || y["동"]-x["동"]);
+}
 function renderRes(){
   const d = data[cur], rows = shownRows(), f = F[cur], all = allRows();
   const cond = [f.grp!=="전체" && f.grp, f.cls, f.sub, f.q.trim() && `"${f.q.trim()}"`, cur==="schedule" && day!=="전체" && day].filter(Boolean);
   let html = cond.length ? `<p class="onlyprint">조건: ${esc(cond.join(" · "))}</p>` : "";
   if(cur==="medal"){
-    const s = d.summary;
-    if(s) html += `<div class="medals"><div class="m gold"><b>${s.gold}</b><span>금</span></div><div class="m silver"><b>${s.silver}</b><span>은</span></div>
-      <div class="m bronze"><b>${s.bronze}</b><span>동</span></div><div class="m total"><b>${s.total}</b><span>합계</span></div></div>`;
+    const sm = d.summary, big = c => `<div class="medals"><div class="m gold"><b>${c.gold}</b><span>금</span></div><div class="m silver"><b>${c.silver}</b><span>은</span></div>
+      <div class="m bronze"><b>${c.bronze}</b><span>동</span></div><div class="m total"><b>${c.total}</b><span>합계</span></div></div>`;
     if(all.length){
-      html += "<h2>구분별 메달 수 (상세 명세 기준)</h2>" + table([
-        {"구분":"학생", ...cnt(all.filter(r => grpOf(r)==="학생"))},
-        {"구분":"일반부", ...cnt(all.filter(r => grpOf(r)==="일반부"))},
-        {"구분":"전체", ...cnt(all)}]);
+      const stu = all.filter(r => grpOf(r)==="학생"), lv = x => all.filter(r => levelOf(r)===x);
+      html += "<h2>학생선수 메달 (초·중·고)</h2>" + big(countMedals(stu));
+      if(sm) html += `<p class="count">전체(공식) 금 ${sm.gold} · 은 ${sm.silver} · 동 ${sm.bronze} · 합계 ${sm.total}</p>`;
+      html += "<h2>구분별 메달 수</h2>" + table([["초등",lv("초등")],["중등",lv("중등")],["고등",lv("고등")],["학생 소계",stu],
+        ["대학부",lv("대학부")],["일반부",lv("일반부")],["기타",lv("기타")],["전체",all]]
+        .filter(([n, rs]) => rs.length || n==="전체").map(([n, rs]) => ({"구분":n, ...cnt(rs)})));
       const det = countMedals(all);
-      if(d.tally?.length && s && det.total !== s.total)
-        html += `<p class="note">※ 상세 명세 기준 ${det.total}개, 공식 집계 ${s.total}개로 차이가 있습니다. 아래 종목별 집계와 비교해 확인하세요.</p>`;
-      if(cond.length){ const c = countMedals(rows);
+      if(d.tally?.length && sm && det.total !== sm.total)
+        html += `<p class="note">※ 상세 명세 기준 ${det.total}개, 공식 집계 ${sm.total}개로 차이가 있습니다. 아래 종목별 집계와 비교해 확인하세요.</p>`;
+      if(f.cls || f.sub || f.q.trim() || (f.grp!=="학생" && f.grp!=="전체")){ const c = countMedals(rows);
         html += `<h2>선택한 조건의 메달</h2><p class="count">금 ${c.gold} · 은 ${c.silver} · 동 ${c.bronze} · 합계 <b>${c.total}</b></p>`; }
-    }
-    if(d.tally?.length) html += "<h2>종목별 집계 (공식)</h2>" + table(d.tally, ["시도"]);
+    }else if(sm) html += big(sm);
+    const ath = byAthlete(rows);
+    if(ath.length) html += `<h2>선수별 메달 (${ath.length}명)</h2>` + table(ath, [], true);
     html += `<h2>메달 명세 (${rows.length}건)</h2>` + (rows.length ? table(rows, [], true) : '<p class="empty">조건에 맞는 기록이 없습니다.</p>');
+    if(d.tally?.length) html += "<h2>종목별 집계 (공식, 전 종별)</h2>" + table(d.tally, ["시도"]);
   }else{
     if(!rows.length) html += `<p class="empty">${all.length ? "조건에 맞는 경기가 없습니다." : "아직 부산 일정이 없습니다."}</p>`;
     const g = {}; rows.slice().sort((a,b) => (a["일시"]||"").localeCompare(b["일시"]||"")).forEach(r => (g[dateOf(r)] ??= []).push(r));
