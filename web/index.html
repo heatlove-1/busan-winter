@@ -81,6 +81,17 @@ function countMedals(rows){   // (종목·종별·세부종목·메달) 조합 1
   }
   return {gold:n["금"], silver:n["은"], bronze:n["동"], total:n["금"]+n["은"]+n["동"]};
 }
+// 보고서 형식: 종목을 스키/빙상/바이애슬론/아이스하키/컬링으로 묶음 (표에는 메달이 있는 종목만 표시)
+const BIG = {"빙상스피드":"빙상","빙상쇼트트랙":"빙상","빙상피겨":"빙상","스키알파인":"스키","크로스컨트리":"스키","스노보드":"스키",
+  "바이애슬론":"바이애슬론","아이스하키":"아이스하키","컬링":"컬링"};
+const BIG_ORDER = ["스키","빙상","바이애슬론","아이스하키","컬링","기타"];
+function reportTable(rows){
+  const g = {}; rows.forEach(r => (g[BIG[r["종목"]] ?? "기타"] ??= []).push(r));
+  const cols = BIG_ORDER.filter(k => g[k] && countMedals(g[k]).total > 0);
+  const c = Object.fromEntries(cols.map(k => [k, countMedals(g[k])])), all = countMedals(rows);
+  return [["금","gold"],["은","silver"],["동","bronze"],["합계","total"]].map(([n, k]) =>
+    ({"구분":n, ...Object.fromEntries(cols.map(x => [x, c[x][k] || "-"])), "계":all[k]}));
+}
 // ---end pure---
 const TITLE = {schedule:"경기 일정", medal:"메달 현황"};
 const DATA = location.pathname.includes("/web/") ? "../data/" : "data/";
@@ -92,6 +103,10 @@ const opp = v => { const m = String(v ?? "").split(/[<>]/); return m.length === 
 const show = r => ({"시간": (r["일시"]||"").slice(11), "종목": r["종목"], "종별": r["종별"], "세부종목": r["세부종목"],
   "경기구분": r["경기구분"], "상태": r["상태"], "경기장": r["경기장"], "상대": opp(r["시도"])});
 const cnt = rs => { const c = countMedals(rs); return {"금":c.gold, "은":c.silver, "동":c.bronze, "합계":c.total}; };
+function sportRows(rows){
+  const g = {}; rows.forEach(r => (g[r["종목"] || "기타"] ??= []).push(r));
+  return Object.entries(g).map(([k, rs]) => ({"종목":k, ...cnt(rs)})).filter(x => x["합계"] > 0);
+}
 
 let cur = "schedule", day = "전체", data = {};
 const F = {schedule:{grp:"전체",cls:"",sub:"",q:""}, medal:{grp:"학생",cls:"",sub:"",q:""}};
@@ -179,6 +194,10 @@ function renderRes(){
       html += "<h2>구분별 메달 수</h2>" + table([["초등",lv("초등")],["중등",lv("중등")],["고등",lv("고등")],["학생 소계",stu],
         ["대학부",lv("대학부")],["일반부",lv("일반부")],["기타",lv("기타")],["전체",all]]
         .filter(([n, rs]) => rs.length || n==="전체").map(([n, rs]) => ({"구분":n, ...cnt(rs)})));
+      if(all.some(r => r["종목"])){
+        const sr = sportRows(stu);
+        html += "<h2>종목별 학생 메달</h2>" + (stu.length ? table(reportTable(stu)) : "") + (sr.length ? "<h2>세부 종목별 학생 메달</h2>" + table(sr) : "");
+      }else html += '<p class="note">※ 메달 명세에 종목 정보가 없어 종목별 표를 만들 수 없습니다.</p>';
       const det = countMedals(all);
       if(d.tally?.length && sm && det.total !== sm.total)
         html += `<p class="note">※ 상세 명세 기준 ${det.total}개, 공식 집계 ${sm.total}개로 차이가 있습니다. 아래 종목별 집계와 비교해 확인하세요.</p>`;

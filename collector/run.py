@@ -34,13 +34,7 @@ def fetch_page(s: requests.Session, ep: dict, page: int, date: str | None = None
     return r.text
 
 
-def fetch_all(name: str) -> list[dict]:
-    ep, parse = CFG["endpoints"][name], PARSERS[name]
-    s = requests.Session()
-    s.headers["User-Agent"] = os.environ.get("COLLECTOR_UA") or CFG["user_agent"]
-    s.get(CFG["base"] + "/main.do", timeout=10)      # 세션 쿠키 확보
-    dates = list(iter_dates(ep["date_ranges"])) if "date_ranges" in ep else [None]
-    classes = ep.get("class_codes") or [None]
+def _collect(s, ep, parse, dates, classes) -> list[dict]:
     seen, out = set(), []
     for date in dates:
         for cls in classes:
@@ -50,13 +44,29 @@ def fetch_all(name: str) -> list[dict]:
                     for r in rows:
                         r["종목"] = ep["class_names"][cls]
                 new = [r for r in rows if dumps(r) not in seen]
-                time.sleep(0.7)                        # 서버 부담 최소화
-                if not new:                            # 새 행이 없으면 끝
+                time.sleep(0.7)                                # 서버 부담 최소화
+                if not new:                                    # 새 행이 없으면 끝
                     break
                 seen.update(dumps(r) for r in new)
                 out += new
                 if ep.get("single_page"):
                     break
+    return out
+
+
+def fetch_all(name: str) -> list[dict]:
+    ep, parse = CFG["endpoints"][name], PARSERS[name]
+    s = requests.Session()
+    s.headers["User-Agent"] = os.environ.get("COLLECTOR_UA") or CFG["user_agent"]
+    s.get(CFG["base"] + "/main.do", timeout=10)      # 세션 쿠키 확보
+    dates = list(iter_dates(ep["date_ranges"])) if "date_ranges" in ep else [None]
+    classes = ep.get("class_codes") or [None]
+    out = _collect(s, ep, parse, dates, classes)
+    if ep.get("class_check") and classes != [None]:
+        ids = [dumps({k: v for k, v in r.items() if k != "종목"}) for r in out]
+        if not out or len(ids) != len(set(ids)):          # 종목 필터가 무시되면 같은 행이 종목마다 반복됨
+            print(f"[{name}] 경고: 종목 코드 필터가 적용되지 않은 것으로 보여 종목 구분 없이 다시 수집합니다", file=sys.stderr)
+            out = _collect(s, ep, parse, dates, [None])
     return out
 
 
