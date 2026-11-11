@@ -46,8 +46,8 @@ jobs:
       COLLECTOR_UA: ${{ vars.COLLECTOR_UA }}
       DROP_COLUMNS: ${{ vars.DROP_COLUMNS || 'none' }}   # 기본: 모든 컬럼 포함(소속·학년 공개). 숨기려면 변수에 소속,학년 입력
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -67,8 +67,8 @@ jobs:
           mkdir -p site/data
           cp web/index.html site/index.html
           cp data/*.json site/data/
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deploy
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
