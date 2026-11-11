@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>부산 동계체전</title>
+<style>
+:root{--bg:#f4f7fa;--ink:#10243a;--sub:#5b6b7c;--line:#d5dde6;--card:#fff;--sea:#0e5a8a;
+--gold:#c9961a;--silver:#8a97a3;--bronze:#a8643a;--live:#c2410c}
+@media (prefers-color-scheme:dark){:root{--bg:#0c1722;--ink:#e6edf4;--sub:#93a4b5;--line:#233446;--card:#122231;--sea:#6bb5e6;--live:#fb923c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Pretendard","Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+main{max-width:860px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.15rem;margin:0 0 4px;color:var(--sea)}
+.meta{color:var(--sub);font-size:.85rem;margin:0 0 16px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 20px}
+.tabs{display:flex;gap:4px;margin-right:auto}
+button{font:inherit;font-size:.9rem;padding:7px 14px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:6px;cursor:pointer}
+button:focus-visible{outline:2px solid var(--sea);outline-offset:2px}
+.tabs button[aria-selected=true]{background:var(--sea);color:#fff;border-color:var(--sea)}
+.medals{display:flex;gap:28px;align-items:flex-end;margin:0 0 24px}
+.m b{display:block;font-size:3rem;line-height:1;font-weight:800}.m span{font-size:.9rem;color:var(--sub)}
+.gold b{color:var(--gold)}.silver b{color:var(--silver)}.bronze b{color:var(--bronze)}
+.total{margin-left:auto;text-align:right}.total b{font-size:1.6rem}
+h2{font-size:1rem;margin:22px 0 8px}
+.wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--sub);font-weight:600}tr:last-child td{border-bottom:0}
+.st-진행{color:var(--live);font-weight:700}.st-종료{color:var(--sub)}
+.empty{padding:24px;color:var(--sub)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 4px}
+.chip[aria-pressed=true]{background:var(--sea);color:#fff;border-color:var(--sea)}
+@media print{
+  .noprint{display:none!important}
+  body{background:#fff;color:#000}.wrap{border-color:#999;overflow:visible}
+  th,td{white-space:normal;padding:5px 8px;border-color:#bbb}h2{break-after:avoid}tr{break-inside:avoid}
+  .m b{color:#000!important}
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>부산 동계체전</h1>
+  <p class="meta" id="meta">불러오는 중…</p>
+  <div class="bar noprint">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="t-schedule" aria-selected="true">일정</button>
+      <button role="tab" id="t-medal" aria-selected="false">메달</button>
+    </div>
+    <button id="print">PDF 저장 / 인쇄</button>
+    <button id="csv">엑셀(CSV) 저장</button>
+    <button id="share">공유</button>
+  </div>
+  <section id="view"></section>
+</main>
+<script>
+const FILES = {schedule:["schedule_t","schedule_r"], medal:["medal_total","medal"]}, TITLE = {schedule:"경기 일정", medal:"메달 명세"};
+let cur = "schedule", day = "전체", data = {};
+const DATA = location.pathname.includes("/web/") ? "../data/" : "data/";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+async function getJson(f){
+  try{ const r = await fetch(`${DATA}${f}.json?${Date.now()}`); return r.ok ? await r.json() : null; }catch{ return null; }
+}
+async function load(){
+  const [t, r, mt, m] = await Promise.all(["schedule_t","schedule_r","medal_total","medal"].map(getJson));
+  const sch = [t, r].filter(Boolean), med = mt || m;
+  data.schedule = sch.length ? {updated_at: sch.map(p => p.updated_at).sort().pop(), rows: sch.flatMap(p => p.rows)} : null;
+  data.medal = med ? {updated_at: med.updated_at, summary: med.summary, tally: mt ? mt.rows : [], rows: m ? m.rows : []} : null;
+  render();
+}
+function table(rows, skip=[], hideEmpty=false){
+  const cols = Object.keys(rows[0]).filter(c => !skip.includes(c) && (!hideEmpty || rows.some(r => r[c])));
+  return `<div class="wrap"><table><thead><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
+    rows.map(r=>`<tr>${cols.map(c=>`<td${c==="상태"?` class="st-${esc(r[c])}"`:""}>${esc(r[c])}</td>`).join("")}</tr>`).join("") +
+    `</tbody></table></div>`;
+}
+const dateOf = r => (r["일시"] || "").slice(0,10);
+const wd = s => "일월화수목금토"[new Date(s.replace(/\//g,"-") + "T00:00:00").getDay()] ?? "";
+const opp = v => { const m = String(v ?? "").split(/[<>]/); return m.length === 2 ? (m[0].trim()==="부산" ? m[1] : m[0]).trim() : (v ?? ""); };
+const show = r => ({"시간": (r["일시"]||"").slice(11), "종목": r["종목"], "종별": r["종별"], "세부종목": r["세부종목"],
+  "경기구분": r["경기구분"], "상태": r["상태"], "경기장": r["경기장"], "상대": opp(r["시도"])});
+function shownRows(){
+  const d = data[cur]; if(!d) return [];
+  return cur==="schedule" && day!=="전체" ? d.rows.filter(r => dateOf(r)===day) : d.rows;
+}
+function render(){
+  const d = data[cur], v = $("view");
+  for(const k in FILES){ $("t-"+k).setAttribute("aria-selected", k===cur); }
+  if(!d){ $("meta").textContent = "데이터를 불러오지 못했습니다. 수집기(python -m collector.run)를 먼저 실행하세요."; v.innerHTML=""; return; }
+  $("meta").textContent = TITLE[cur] + " · 마지막 갱신 " + d.updated_at.replace("T"," ").slice(0,16);
+  if(!d.rows.length && !(d.tally||[]).length){ v.innerHTML = '<p class="empty">아직 부산 기록이 없습니다.</p>'; return; }
+  if(cur==="medal"){
+    const s = d.summary;
+    v.innerHTML = `<div class="medals"><div class="m gold"><b>${s.gold}</b><span>금</span></div>
+      <div class="m silver"><b>${s.silver}</b><span>은</span></div><div class="m bronze"><b>${s.bronze}</b><span>동</span></div>
+      <div class="m total"><b>${s.total}</b><span>합계</span></div></div>` + (d.tally?.length ? "<h2>종목별 집계</h2>" + table(d.tally, ["시도"]) : "") + (d.rows.length ? "<h2>메달 명세</h2>" + table(d.rows) : "");
+  }else{
+    const days = [...new Set(d.rows.map(dateOf))].sort();
+    if(day !== "전체" && !days.includes(day)) day = "전체";
+    const chips = ["전체", ...days].map(x => `<button class="chip" aria-pressed="${x===day}" data-day="${x}">${x==="전체" ? x : x.slice(5)+" ("+wd(x)+")"}</button>`).join("");
+    const g = {}; shownRows().slice().sort((a,b) => (a["일시"]||"").localeCompare(b["일시"]||"")).forEach(r => (g[dateOf(r)] ??= []).push(r));
+    v.innerHTML = `<div class="chips noprint">${chips}</div>` +
+      Object.entries(g).map(([dt, rs]) => `<h2>${dt} (${wd(dt)})</h2>` + table(rs.map(show), [], true)).join("");
+    v.querySelectorAll(".chip").forEach(b => b.onclick = () => { day = b.dataset.day; render(); });
+  }
+}
+function csvOf(rows){
+  const cols = Object.keys(rows[0]), q = x => `"${String(x ?? "").replace(/"/g,'""')}"`;
+  return "\ufeff" + [cols.map(q).join(","), ...rows.map(r => cols.map(c=>q(r[c])).join(","))].join("\r\n");
+}
+function csvFile(){
+  const rows = shownRows(); if(!rows.length) return null;
+  const tag = cur==="schedule" && day!=="전체" ? "_" + day.replace(/\//g,"") : "";
+  return new File([csvOf(rows)], `busan_${cur}${tag}.csv`, {type:"text/csv"});
+}
+Object.keys(FILES).forEach(k => $("t-"+k).onclick = () => { cur = k; render(); });
+$("print").onclick = () => window.print();
+$("csv").onclick = () => {
+  const f = csvFile(); if(!f) return alert("저장할 데이터가 없습니다.");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name; a.click();
+};
+$("share").onclick = async () => {
+  const f = csvFile(), text = "부산 동계체전 " + TITLE[cur];
+  try{
+    if(f && navigator.canShare?.({files:[f]})) await navigator.share({files:[f], title:text});
+    else if(navigator.share) await navigator.share({title:text, text, url:location.href});
+    else { await navigator.clipboard.writeText(location.href); alert("링크를 복사했습니다."); }
+  }catch(e){ /* 사용자가 공유를 취소한 경우 */ }
+};
+load(); setInterval(load, 60000);
+</script>
+</body>
+</html>

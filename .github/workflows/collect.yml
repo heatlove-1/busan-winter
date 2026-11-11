@@ -1,0 +1,74 @@
+name: collect-and-deploy
+
+on:
+  schedule:
+    - cron: "3-59/10 * * * *"   # 10분 간격(UTC 기준, 3분부터). GitHub 최소 간격은 5분이며 지연될 수 있음
+  workflow_dispatch:            # Actions 탭에서 수동 실행(항상 수집)
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    env:
+      ACTIVE_FROM: ${{ vars.ACTIVE_FROM }}
+      ACTIVE_UNTIL: ${{ vars.ACTIVE_UNTIL }}
+    steps:
+      - id: check
+        shell: bash
+        run: |
+          # 예약 실행은 ACTIVE_FROM ~ ACTIVE_UNTIL(한국 날짜, YYYY-MM-DD) 사이에만 수집. 변수가 없으면 수집하지 않음.
+          today=$(TZ=Asia/Seoul date +%F)
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then run=true
+          elif [ -n "$ACTIVE_FROM" ] && [ -n "$ACTIVE_UNTIL" ] && [[ ! "$today" < "$ACTIVE_FROM" ]] && [[ ! "$today" > "$ACTIVE_UNTIL" ]]; then run=true
+          else run=false; fi
+          echo "오늘(KST) $today / 수집 여부 $run"
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+  collect:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      COLLECTOR_UA: ${{ vars.COLLECTOR_UA }}
+      DROP_COLUMNS: ${{ vars.DROP_COLUMNS || 'none' }}   # 기본: 모든 컬럼 포함(소속·학년 공개). 숨기려면 변수에 소속,학년 입력
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 이전 데이터 가져오기 (변경 감지용, 처음엔 없어도 됨)
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"; repo="${GITHUB_REPOSITORY#*/}"
+          mkdir -p data
+          for f in medal_total medal schedule_t schedule_r events; do
+            curl -fsSL "https://${owner}.github.io/${repo}/data/${f}.json?t=$(date +%s)" -o "data/${f}.json" || rm -f "data/${f}.json"
+          done
+      - name: 수집
+        run: python -m collector.run
+      - name: 사이트 폴더 만들기
+        run: |
+          mkdir -p site/data
+          cp web/index.html site/index.html
+          cp data/*.json site/data/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
