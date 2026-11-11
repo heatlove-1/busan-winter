@@ -46,6 +46,9 @@ def fetch_all(name: str) -> list[dict]:
         for cls in classes:
             for page in range(1, CFG["max_pages"] + 1):
                 rows = keep_rows(parse(fetch_page(s, ep, page, date, cls)), ep.get("keep", {}))
+                if cls and cls in ep.get("class_names", {}):   # 제목 태그 대신 종목 코드로 종목명 지정
+                    for r in rows:
+                        r["종목"] = ep["class_names"][cls]
                 new = [r for r in rows if dumps(r) not in seen]
                 time.sleep(0.7)                        # 서버 부담 최소화
                 if not new:                            # 새 행이 없으면 끝
